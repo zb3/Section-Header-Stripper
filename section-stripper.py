@@ -142,8 +142,41 @@ if __name__ == "__main__":
 		print("Trailing bytes after end of section header.", file=sys.stderr)
 		exit(1)
 
+	last_mapped_addr = 0
+
+	phoff = header.fields.phoff
+	phentsize = header.fields.phentsize
+	phnum = header.fields.phnum
+
+	phdr_entry = BetterStruct([
+		("L", "type"),
+		("L", "flags"),
+		("Q", "offset"),
+		("Q", "vaddr"),
+		("Q", "paddr"),
+		("Q", "filesz"),
+		("Q", "memsz"),
+		("Q", "align"),
+	], header_ident.fields.endianness == 1)
+
+	for entry_idx in range(phnum):
+		phdr_entry_offset = phoff + phentsize*entry_idx
+		phdr_entry.unpack(file_contents[phdr_entry_offset:])
+
+		map_end = phdr_entry.fields.offset + phdr_entry.fields.filesz
+
+		if map_end > last_mapped_addr:
+			last_mapped_addr = map_end
+
+	new_end_of_file = shstr_entry.fields.offset
+
+	if last_mapped_addr < new_end_of_file and phoff + phnum*phentsize < last_mapped_addr:
+		print("Removing %d bytes before the section header's string table" % (new_end_of_file - last_mapped_addr), file=sys.stderr)
+
+		new_end_of_file = last_mapped_addr
+
 	outputfile.seek(0)
-	outputfile.write(file_contents[:shstr_entry.fields.offset])
+	outputfile.write(file_contents[:new_end_of_file])
 	outputfile.truncate()
 
 	inputfile.close()
